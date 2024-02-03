@@ -1,0 +1,33 @@
+local SaveLoad = {}
+
+local DSS = game:GetService("DataStoreService")
+local DS = DSS:GetDataStore("A01")
+local Key = "data"
+local LOAD_DELAY = 1
+local MAX_RETRIES = 5
+
+function SaveLoad.load(player)
+	if not player or not player.UserId then
+		return
+	end
+	local data = nil
+	local function AttemptLoad(retry)
+		local success, error = pcall(function()
+			data = DS:GetAsync(Key.. player.UserId)
+		end)
+		if success then
+			return data
+			else if (retry < MAX_RETRIES) then
+				wait(1)
+				AttemptLoad(retry+1)
+			else
+				return nil
+				-- Remove and kick the player instead due to data failure to load to prevent data loss
+			end
+		end
+	end
+	data = AttemptLoad(0)
+	return data
+end
+
+return SaveLoad
