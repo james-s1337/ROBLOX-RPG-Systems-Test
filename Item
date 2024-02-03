@@ -1,0 +1,48 @@
+local Item = {}
+Item.__index = Item
+
+function Item.new(item, parent)
+	local self = setmetatable({}, Item)
+	self.id = item.id
+	self.name = item.name
+	self.qty = item.qty
+	local vObj = Instance.new("IntValue")
+	vObj.Name = item.name
+	vObj.Value = item.id
+	vObj:SetAttribute("Qty", item.qty)
+	vObj.Parent = parent
+	self.vObj = vObj
+
+	return self
+end
+
+function Item:add()
+	self.qty += 1
+end
+
+function Item:remove()
+	self.qty -= 1
+	if self.qty <= 0 then
+		self:delete()
+		return true
+	end
+	return false
+end
+
+function Item:delete()
+	self.vObj:Destroy()
+end
+
+function Item:getId()
+	return self.id
+end
+
+function Item:getName()
+	return self.name
+end
+
+function Item:update()
+	self.vObj:SetAttribute("Qty", self.qty)
+end
+
+return Item
