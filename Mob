@@ -1,0 +1,181 @@
+local Mob = {}
+Mob.__index = Mob
+local SS = game:GetService("ServerStorage")
+local MobModels = SS:WaitForChild("Mobs")
+local mobFolder = game:GetService("Workspace"):WaitForChild("Mobs")
+
+local MobData = {
+	["Rat"] = {Health = 30, Damage = 50, KDef = 0, EDef = 0, Level = 1, Speed = 10, Attacks = {"Rat Bite"}, Drops = nil, Silver = 4, Exp = 1, Range = 30, SpawnTime = 30};
+	["Flying Rat"] = {Health = 50, Damage = 70, KDef = 5, EDef = 1, Level = 3, Speed = 14, Attacks = {"Rat Aerial"}, Drops = {{Name = "Small Wing", Rate = 0.05}}, Silver = 8, Exp = 3, Range = 35, SpawnTime = 45};
+	["Gentlerat"] = {Health = 300, Damage = 200, KDef = 10, EDef = 3, Level = 6, Speed = 12, Attacks = {"Rat Bite", "Hat Toss"}, Drops = {{Name = "Gentleman's Cane", Rate = 0.01}, {Name = "Black Dedora", Rate = 0.005}}, Silver = 50, Exp = 10, Range = 25, SpawnTime = 150}; -- Mini boss
+}
+
+local Mobs = {}
+
+local MobAttack = require(script.MobAttack)
+
+function findStats(mobName)
+	for i, v in pairs(MobData) do
+		if i == mobName then
+			return v
+		end
+	end
+	return nil
+end
+
+function Mob.new(spawnPoint, mobName)
+	local self = setmetatable({}, Mob)
+	self.spawn = spawnPoint
+	self.model = MobModels:FindFirstChild(mobName)
+	self.stats = findStats(mobName)
+	if not self.model or not self.stats then
+		return nil
+	end
+	self.model = self.model:Clone()
+	self.root = self.model.PrimaryPart
+	self.mover = self.root.LinearVelocity
+	self.orientator = self.root.AlignOrientation
+	self.root.Health.Value = self.stats.Health
+
+	self.state = "alive"
+	self.health = self.stats.Health
+	self.target = nil
+	self.isAttacking = false
+	self.damaged = {}
+
+	self.model.Parent = mobFolder
+	self:wander()
+
+	table.insert(Mobs, self)
+	return self
+end
+
+function Mob.find(other)
+	for i, v in pairs(Mobs) do
+		if v.model == other then
+			return v
+		end
+	end
+	return nil
+end
+
+function Mob:getModel()
+	return self.model
+end
+
+function Mob:getSpawnTime()
+	return self.stats.SpawnTime
+end
+
+function Mob:wander()
+	local function findTarget()
+		local target = nil
+		local nearestDistance = 0
+		local players = game:GetService("Players")
+		for i, player in pairs(players:GetChildren()) do
+			if player.Character and player.Character.Humanoid.Health > 0 then
+				local dist = (player.Character.PrimaryPart.Position - self.root.Position).Magnitude
+				if (dist < nearestDistance or not target) and self.stats.Range >= dist then
+					target = player.Character.PrimaryPart
+					nearestDistance = dist
+				end
+			end
+		end
+		return target
+	end
+	local wanderThread = coroutine.wrap(function()
+		while wait() do
+			if self.isAttacking then
+				self:stop()
+				continue
+			else
+				self:go()
+			end
+			self.target = findTarget()
+			if self.target then
+				local attackName = self.stats.Attacks[math.random(1, #self.stats.Attacks)]
+				local attackStats = MobAttack.findAttack(attackName)
+				self:goTo(self.target.Position)
+				if not attackStats then
+					return
+				end
+				if (target.Position - self.root.Position).Magnitude <= attackStats.Range then
+					self:attack(attackName)
+				end
+			else
+				local randomPos = Vector3.new(self.root.Position.X + math.random(-10, 10), self.root.Position.Y, self.root.Position.Z + math.random(-10, 10))
+				self:goTo(randomPos)
+				wait(1.5)
+				if not findTarget() then
+					self:stop()
+				else
+					continue
+				end
+				wait(1)
+			end
+		end
+	end)
+	wanderThread()
+end
+
+function Mob:goTo(point)
+	local pos = CFrame.new(self.root.Position, Vector3.new(point.X, self.root.Position.Y, point.Z))
+	self.mover.LineDirection = -Vector3.new(self.root.Position.X - point.X, 0, self.root.Position.Z - point.Z)
+	self.orientator.CFrame = pos
+end
+
+function Mob:stopAnimations()
+	
+end
+
+function Mob:stop()
+	self.mover.LineVelocity = 0
+	self:stopAnimations()
+	-- idle animation if not attacking 
+end
+
+function Mob:go()
+	self.mover.LineVelocity = self.stats.Speed
+	self:stopAnimations()
+	-- walking animation
+end
+
+function Mob:attack(attackName)
+	local temp = SS.Attacks:FindFirstChild(attackName.gsub(" ", ""))
+	if not clone then
+		return
+	end
+	local attackPart = temp:Clone()
+end
+
+function Mob:takeDamage(enerAmt, phyAmt, player)
+	local enerDamage = math.clamp(enerAmt-(enerAmt*(self.stats.EDef/100)), 0, self.health)
+	self.health -= enerDamage
+	local phyDamage = math.clamp(phyAmt-(phyAmt*(self.stats.KDef/100)), 0, self.health)
+	self.health -= phyDamage
+	local totalDamage = enerDamage + phyDamage
+	local plrExists = false
+	for i, v in pairs(self.damaged) do
+		if v.plr == player then
+			v.dmg += totalDamage
+			plrExists = true
+		end
+	end
+	self.root.Health.Value = self.health
+	if not plrExists then
+		table.insert(self.damaged, {dmg = totalDamage, plr = player})
+	end
+	if self.health <= 0 then
+		self:die()
+	end
+end
+
+function Mob:die()
+	
+end
+
+function Mob:despawn()
+	-- remove mob model and mob obj from mob list
+end
+
+return Mob
