@@ -1,0 +1,69 @@
+local CharStat = {}
+CharStat.__index = CharStat
+
+function CharStat.new(value, name, parent)
+	local self = setmetatable({}, CharStat)
+	self.value = value
+	self.max = value
+	local vObj = Instance.new("IntValue")
+	vObj.Name = name
+	vObj.Value = value
+	vObj:SetAttribute("Max", value)
+	vObj.Parent = parent
+	self.vObj = vObj
+
+	self:regen()
+	return self
+end
+
+function CharStat:setMax(value)
+	self.value = value
+	self:update()
+end
+
+function CharStat:reset()
+	self.value = self.max
+	self:update()
+end
+
+function CharStat:get()
+	return self.value
+end
+
+function CharStat:getMax()
+	return self.max
+end
+
+function CharStat:increment(amount)
+	local newAmount = math.clamp(amount, 0, self.max - self.value)
+	self.value += newAmount
+	self:update()
+end
+
+function CharStat:decrement(amount)
+	local newAmount = math.clamp(amount, 0, self.max - self.value)
+	self.value -= newAmount
+	self:update()
+end
+
+function CharStat:update()
+	self.vObj.Value = self.value
+	self.vObj:SetAttribute("Max", self.max)
+end
+
+function CharStat:regen()
+	local function regenerate()
+		local REGEN = 1/50
+		local STEP = 2
+		while wait() do
+			if self.value < self.max then
+				self:increment(self.max*REGEN*STEP)
+				wait(STEP)
+			end
+		end
+	end
+	local regen = coroutine.wrap(regenerate)
+	regen()	
+end
+
+return CharStat
