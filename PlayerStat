@@ -1,0 +1,29 @@
+local PlayerStat = {}
+PlayerStat.__index = PlayerStat
+
+function PlayerStat.new(value, name, parent)
+	local self = setmetatable({}, PlayerStat)
+	self.value = value
+	local vObj = Instance.new("IntValue")
+	vObj.Name = name
+	vObj.Value = value
+	vObj.Parent = parent
+	self.vObj = vObj
+
+	return self
+end
+
+function PlayerStat:set(value)
+	self.value = value
+	self:update()
+end
+
+function PlayerStat:get()
+	return self.value
+end
+
+function PlayerStat:update()
+	self.vObj.Value = self.value
+end
+
+return PlayerStat
