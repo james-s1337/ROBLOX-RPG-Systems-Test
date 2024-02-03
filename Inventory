@@ -1,0 +1,258 @@
+local player = game:GetService("Players").LocalPlayer
+local plrItems = player:WaitForChild("Items")
+local plrStats = player:WaitForChild("Stats")
+local weap = plrStats:WaitForChild("Weapon")
+local armor = plrStats:WaitForChild("Armor")
+
+local catagories = script.Parent.Catagories
+local itemsFrame = script.Parent.ItemsHolder.SFrame
+local itemsDesc = script.Parent.ItemDesc
+local options = itemsDesc.Options
+local search = script.Parent.Search
+local dropsFrame = script.Parent.Parent.Parent.Drops
+local dropTemp = game:GetService("ReplicatedStorage").Temp.DropTemp
+local itemsTemp = game.ReplicatedStorage.Temp.ItemTemp
+
+local selected = 0
+local currentCatagory = "All"
+local Data = require(game.ReplicatedStorage.Modules.Data)
+local Queue = require(game.ReplicatedStorage.Modules.Queue)
+local MainFunc = game.ReplicatedStorage.Events.MainFunctions
+
+function updateItemsFrame()
+	local MAX_ITEMS = 1/itemsTemp.Size.Y.Scale
+	local size = itemsTemp.Size
+	local numItems = #itemsFrame:GetChildren()
+	if numItems > MAX_ITEMS then
+		itemsFrame.CanvasSize = UDim2.new(0, 0, 1+((numItems-MAX_ITEMS)*itemsTemp.Size.Y.Scale), 0)
+		size = UDim2.new(1, 0, 1/numItems, 0)
+	end
+	local count = 0
+	for i, v in pairs(itemsFrame:GetChildren()) do
+		v.Size = size
+		v.Position = UDim2.new(0, 0, count*size.Y.Scale, 0)
+		count += 1
+	end
+end
+
+function isSearch(itemName)
+	if search.Text == "" or search.Text == "Search..." then
+		return true
+	end
+	if string.match(itemName:lower(), search.Text:lower()) then
+		return true
+	end
+	return false
+end
+
+function createItems()
+	selected = 0
+	for i, v in pairs(itemsFrame:GetChildren()) do
+		v:Destroy()
+	end
+	for i, v in pairs(plrItems:GetChildren()) do
+		local itemData = Data.findItem(v.Name)
+		if not itemData then
+			continue
+		end
+		if isSearch(v.Name) and (currentCatagory == "All" or currentCatagory == itemData.Type) then
+			local temp = itemsTemp:Clone()
+			temp.Title.Text = v.Name
+			temp.ImageLabel.Image = itemData.Image
+			temp.Desc.Text = "Lv. ".. itemData.Level.. " - ".. itemData.Type
+			if itemData.Type == "Misc" then
+				temp.ImageLabel.Qty.Text = "x".. v:GetAttribute("Qty")
+			else
+				temp.ImageLabel.Qty.Text = v:GetAttribute("Qty")
+				if (v:GetAttribute("Qty") > 0) then
+					temp.ImageLabel.Qty.Text = "+".. v:GetAttribute("Qty")
+				end
+			end
+			if v.Value == weap.Value or v.Value == armor.Value then
+				temp.Title.TextColor3 = Color3.new(1, 0.701961, 0)
+			end
+			temp.Parent = itemsFrame
+			temp.Button.MouseButton1Click:Connect(function()
+				if selected ~= v.Value then
+					selected = v.Value
+					defaultOptions()
+					createOptions()
+				else
+					selected = 0
+					defaultOptions()
+				end
+			end)
+		end
+	end
+	defaultOptions()
+	updateItemsFrame()
+end
+
+function defaultOptions()
+	options.Visible = false
+	itemsDesc.ImageLabel.Visible = false
+	for i, v in pairs(itemsDesc:GetChildren()) do
+		if v:IsA("TextLabel") then
+			v.Text = ""
+		end
+	end
+end
+
+function findItemWithId()
+	for i, v in pairs(plrItems:GetChildren()) do
+		if v.Value == selected then
+			return v
+		end
+	end
+	return nil
+end
+
+function createOptions()
+	local item = findItemWithId(selected)
+	if not item then
+		return
+	end
+	local itemData = Data.findItem(item.Name)
+	if not itemData then
+		return
+	end
+	itemsDesc.Title.Text = item.Name
+	itemsDesc.Level.Text = "Lv. ".. itemData.Level
+	itemsDesc.ImageLabel.Image = itemData.Image
+	if itemData.Type == "Misc" then
+		itemsDesc.ImageLabel.Qty.Text = "x".. item:GetAttribute("Qty")
+		options.Equip.Text = "---"
+		options.Delete.Text = "Delete"
+	else
+		itemsDesc.ImageLabel.Qty.Text = item:GetAttribute("Qty")
+		if (item:GetAttribute("Qty") > 0) then
+			itemsDesc.ImageLabel.Qty.Text = "+".. item:GetAttribute("Qty")
+		end
+		itemsDesc.Kinetic.Text = "Kinetic: ".. itemData.Kinetic
+		itemsDesc.Energy.Text = "Energy: ".. itemData.Energy
+		itemsDesc.MSpd.Text = "MSpd: ".. itemData.MSpd
+		options.Equip.Text = "Equip"
+		options.Delete.Text = "Delete"
+		if (selected == weap.Value or selected == armor.Value) then
+			options.Equip.Text = "Unequip"
+			options.Delete.Text = "---"
+		end
+	end
+	itemsDesc.ImageLabel.Visible = true
+	options.Visible = true
+end
+
+function events()
+	options.Equip.MouseButton1Click:Connect(function()
+		if options.Equip.Text ~= "---" then
+			MainFunc:InvokeServer("equip", selected)
+			createItems()
+		end
+	end)
+
+	options.Delete.MouseButton1Click:Connect(function()
+		if options.Delete.Text == "Delete" then
+			options.Delete.Text = "Confirm?"
+			wait(3)
+			if options.Delete.Text == "Confirm?" then
+				options.Delete.Text = "Delete"
+			end
+		end
+		if options.Delete.Text == "Confirm?" then
+			MainFunc:InvokeServer("delete", selected)
+			createItems()
+		end
+	end)
+
+	search.Changed:Connect(function()
+		createItems()
+	end)
+
+	search.FocusLost:Connect(function()
+		if search.Text == "" then
+			search.Text = "Search..."
+		end
+	end)
+	search.Text = "Search..."
+
+	for i, v in pairs(catagories:GetChildren()) do
+		v.MouseButton1Click:Connect(function()
+			currentCatagory = v.Name
+			for j, c in pairs(catagories:GetChildren()) do
+				c.TextColor3 = Color3.new(1, 1, 1)
+			end
+			v.TextColor3 = Color3.new(1, 0.701961, 0)
+			createItems()
+		end)
+	end
+	catagories.All.TextColor3 = Color3.new(1, 0.701961, 0)
+
+	local itemQueue = Queue.new()
+	local function destroyDropItems()
+		for i, v in pairs(dropsFrame:GetChildren()) do
+				if v:IsA("Frame") then
+					v:Destroy()
+				end
+			end
+	end
+
+	local function cycleDrops()
+		for i, v in pairs(dropsFrame:GetChildren()) do
+			if v:IsA("Frame") then
+				v:TweenPosition(UDim2.new(0, 0, v.Position.Y.Scale + 0.333, 0), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.2, true)
+			end
+		end
+	end
+
+	local function getNextNode(node)
+		return node:getNext()
+	end
+
+	local function placeDrop(item)
+		if not item then
+			wait(3)
+			if itemQueue:isEmpty() then
+				destroyDropItems()
+			end
+			return
+		end
+		local itemData = Data.findItem(item:getData().Name)
+		if not itemData then
+			return
+		end
+		wait()
+		local temp = dropTemp:Clone()
+		temp.Position = UDim2.new(0, 0, -0.333, 0)
+		temp.Title.Text = "+ ".. item:getData().Name
+		temp.ImageLabel.Image = itemData.Image
+		temp.Parent = dropsFrame
+		cycleDrops()
+		wait(0.2)
+		itemQueue:dequeue()
+		placeDrop(getNextNode(item))
+	end
+	
+	local queueNum = 0
+	plrItems.ChildAdded:Connect(function(newItem)
+		queueNum += 1
+		local num = queueNum
+		if itemQueue:isEmpty() then
+			itemQueue:enqueue(newItem)
+			local itemNode = itemQueue:getFront()
+			if not itemNode or not itemNode:getData() then
+				return
+			end 
+			placeDrop(itemNode)
+		else 
+			itemQueue:enqueue(newItem)
+		end
+		createItems()
+	end)
+
+	plrItems.ChildRemoved:Connect(function()
+		createItems()
+	end)
+end
+
+events()
+createItems()
