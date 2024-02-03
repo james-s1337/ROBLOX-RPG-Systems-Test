@@ -1,0 +1,395 @@
+local Player = {}
+Player.__index = Player
+
+local Players = {}
+local pStats = {
+	Level = 1;
+	Exp = 0;
+	Silver = 0;
+	CLevel = 0;
+	CExp = 0;
+	
+	Weapon = 1;
+	Armor = 2;
+	
+	OneHanded = 0;
+	TwoHanded = 0;
+	Resistance = 0;
+	Agility = 0;
+}
+local items = {
+	{name = "Wooden Sword", id = 1, qty = 0};
+	{name = "Leather Vest", id = 2, qty = 2};
+	{name = "Stone", id = 3, qty = 1};
+	{name = "Wooden Sword", id = 4, qty = -1};
+	{name = "Wooden Sword", id = 5, qty = -2};
+	{name = "Wooden Sword", id = 6, qty = 0};
+}
+local charStats = {
+	Health = 1000;
+	Stamina = 1000;
+}
+local statList = {
+		"OneHanded",
+		"TwoHanded",
+		"Resistance",
+		"Agility"
+}
+
+local SaveLoad = require(script.SaveLoad)
+local PlayerStat = require(script.PlayerStat)
+local Item = require(script.Item)
+local CharStat = require(script.CharStat)
+local Data = require(game:GetService("ReplicatedStorage").Modules.Data)
+
+function Player.new(player)
+	local self = setmetatable({}, Player)
+	self.player = player
+	local data = SaveLoad.load(player)
+	if not data then
+		data = {
+			PlayerStats = pStats;
+			Items = items;			
+		}
+	end
+	local statsFolder = Instance.new("Folder", player)
+	statsFolder.Name = "Stats"
+	for i, v in pairs(data.PlayerStats) do
+		self[i] = PlayerStat.new(v, i, statsFolder)
+	end
+	self.items = {}
+	local itemsFolder = Instance.new("Folder", player)
+	itemsFolder.Name = "Items"
+	for i, v in pairs(data.Items) do
+		self:addItem(v.name, v)
+	end
+	for i, v in pairs(charStats) do 
+		self[i] = CharStat.new(v, i, player)
+	end
+	
+	table.insert(Players, self)
+	return self
+end
+
+function Player.find(player)
+	for i, v in pairs(Players) do
+		if v.player == player then
+			return v
+		end
+	end
+	return nil
+end
+
+function Player.delete(player)
+	for i, v in pairs(Players) do
+		if v.player == player then
+			table.remove(Players, i)
+		end
+	end
+end
+
+function Player:saveData()
+	
+end
+
+function Player:addItem(itemName, item)
+	local function getHighestId()
+		local num = 0
+		for i, v in pairs(self.items) do
+			if v:getId() > num then 
+				num = v:getId()
+			end
+		end
+		return num
+	end
+	local function itemExists()
+		for i, v in pairs(self.items) do
+			if v:getName() == itemName then
+				return true, v
+			end
+		end
+		return false
+	end
+	local function generateQuality()
+		local num = 0
+		local roll = math.random(1, 10) -- 10% for bad roll, 20% for good roll
+		if roll == 1 then
+			local badRoll = math.random(1, 10) -- 80% for -1, 20% for -2
+			if badRoll > 8 then
+				num = -2
+			else
+				num = -1
+			end
+		end
+		if roll > 8 then
+			local goodRoll = math.random(1, 100) -- 85% for 1, 10% for 2, 5% for 3
+			if goodRoll < 85 then
+				num = 1
+			else if goodRoll >= 85 and goodRoll < 95 then
+				num = 2
+			else
+				num = 3
+			end	
+			end
+		end
+		return num
+	end
+	if item ~= nil then
+		local newItem = Item.new(item, self:getPlayer().Items)
+		table.insert(self.items, newItem)
+	else
+		local newId = getHighestId()+1
+		local itemData = Data.findItem(itemName)
+		if not itemData then
+			return
+		end
+		local exists, item = itemExists()
+		if itemData.Type ~= "Misc" or not exists then
+			local qty = generateQuality()
+			if itemData.Type == "Misc" then
+				qty = 1
+			end
+			local newItemTemp = {name = itemName, id = newId, qty = qty}
+			local newItem = Item.new(newItemTemp, self:getPlayer().items)
+			table.insert(self.items, newItem)
+		else
+			item:add()
+		end
+	end
+end
+
+function Player:findItemWithId(id)
+	for i, v in pairs(self.items) do
+		if v:getId() == id then
+			return v, i
+		end
+	end
+end
+
+function Player:removeItem(id)
+	local item, pos = self:findItemWithId(id)
+	if not item then
+		return
+	end
+	local itemData = Data.findItem(item:getName())
+	if not itemData then
+		return
+	end
+	if itemData.Type ~= "Misc" then
+		item:delete()
+		table.remove(self.items, pos)
+	else
+		local removed = item:remove()
+		if removed then
+			table.remove(self.items, pos)
+		end
+	end
+end
+
+function Player:updateHealth()
+	local maxHealth = charStats.Health + (100 * (self.Level:get()-1))
+	self.Health:setMax(maxHealth)
+end
+
+function Player:resetCharStats()
+	self.Health:reset()
+	self.Stamina:reset()
+end
+
+function Player:levelUp()
+	local reqExp = ((self.Level:get()+1)^2) + (self.Level:get()*7)
+	if self.Exp:get() >= reqExp then
+		self.Level:set(self.Level:get() + 1)
+		self.Exp:set(self.Exp:get() - reqExp)
+		self:levelUp()
+	end
+end
+
+function Player:addExp(amount)
+	self.Exp:set(self.Exp:get() + amount)
+end
+
+function Player:cLevelUp()
+	local reqExp = (self.CLevel:get() * 5) + (self.CLevel:get() * 2)
+	if self.CExp:get() >= reqExp then
+		self.CLevel:set(self.CLevel:get() + 1)
+		self.CExp:set(self.CExp:get() - reqExp)
+		self:cLevelUp()
+	end
+end
+
+function Player:addCExp(amount)
+	self.CExp:set(self.CExp:get() + amount)
+end
+
+function Player:addSilver(amount)
+	self.Silver:set(self.Silver:get() + amount)
+end
+
+function Player:removeSilver(amount)
+	self.Silver:set(self.Silver:get() - amount)
+	if self.Silver:get() < 0 then
+		self.Silver:set(0)
+	end
+end
+
+function isStat(statName)
+	for i, v in pairs(statList) do
+		if statName == v then
+			return true
+		end
+	end
+	return false
+end
+
+function Player:hasPoints()
+	local points = (self["OneHanded"]:get() + self["TwoHanded"]:get() + self["Resistance"]:get() + self["Agility"]:get()) - (self.Level:get()-1)
+	if points > 0 then
+		return true
+	else
+		return false
+	end
+end
+
+function Player:addStat(statName)
+	if isStat(statName) then
+		if not self:hasPoints() then
+			return
+		end
+		self[statName]:set(self[statName]:get() + 1)
+		self:setSpeed()
+	end
+end
+
+function Player:returnStat(statName)
+	if not isStat(statName) then
+		return
+	end
+	return self[statName]:get()
+end
+
+function Player:getPlayer()
+	return self.player
+end
+
+function Player:getChar()
+	return self.player.Character
+end
+
+function Player:getWeap()
+	return self.Weapon:get()
+end
+
+function Player:getArmor()
+	return self.Armor:get()
+end
+
+function Player:getDamage()
+	local weap = self:findItemWithId(self:getWeap())
+	if weap then
+		local itemData = Data.findItem(weap:getName())
+		if not itemData then
+			return 0
+		end
+		local enerDmg = itemData.Energy + (self:returnStat(itemData.Class)/100 * itemData.Energy)
+		local phyDmg = itemData.Physical + (self:returnStat(itemData.Class)/100 * itemData.Physical)
+		return enerDmg, phyDmg
+	else
+		return 0
+	end
+end
+
+function Player:getDefense()
+	local armor = self:findItemWithId(self:getArmor())
+	if armor then
+		local itemData = Data.findItem(armor:getName())
+		if not itemData then
+			return 0
+		end
+		local enerDef = itemData.Energy + (self:returnStat(itemData.Resistance)/100 * itemData.Energy)
+		local phyDef = itemData.Physical + (self:returnStat(itemData.Resistance)/100 * itemData.Physical)
+		return enerDef, phyDef
+	else
+		return 0
+	end
+end
+
+function Player:setSpeed()
+	local speed = 16
+	local weap = self:findItemWithId(self:getWeap())
+	local armor = self:findItemWithId(self:getArmor())
+	if weap then
+		local itemData = Data.findItem(weap:getName())
+		if not itemData then 
+			return 
+		end
+		speed += itemData.MSpd
+	end
+	if armor then
+		local itemData = Data.findItem(armor:getName())
+		if not itemData then 
+			return 
+		end
+		speed += itemData.MSpd
+	end
+	speed += (0.2 * self:returnStat("Agility"))
+	if self:getChar() then
+		self:getChar().Humanoid.WalkSpeed = speed
+	end
+end
+
+function Player:stop()
+	if self:getChar() then
+		self:getChar().Humanoid.WalkSpeed = 0
+	end
+end
+
+function Player:isStopped()
+	return self:getChar().Humanoid.WalkSpeed == 0
+end
+
+function Player:setEquip(id, reset)
+	local item = self:findItemWithId(id)	
+	if not item then
+		return
+	end
+	local itemData = Data.findItem(item:getName())
+	if not itemData or itemData.Type == "Misc" then
+		return
+	end
+	local function attachEquip(itemName)
+		local model = game:GetService("ServerStorage").Items:FindFirstChild(itemName)
+		if self:getChar():FindFirstChild(itemData.Type) then
+			self:getChar():FindFirstChild(itemData.Type):Destroy()
+		end
+		if not model then
+			return
+		end
+		local attachPart = "RightHand"
+		if itemData.Type == "Armor" then
+			attachPart = model:GetAttribute("AttachPart")
+		end
+		model = model:Clone()
+		model.Name = itemData.Type
+		model.PrimaryPart.Position = self:getChar():FindFirstChild(attachPart).Position
+		local weld = Instance.new("Weld")
+		weld.Name = "Attach"
+		weld.Part0 = self:getChar():FindFirstChild(attachPart)
+		weld.Part1 = model.PrimaryPart
+		weld.Parent = model.PrimaryPart
+		model.Parent = self:getChar()
+	end
+	local function changeAnim(class)
+		--TODO
+	end
+	if self[itemData.Type]:get() ~= id or reset then
+		self[itemData.Type]:set(id)
+		attachEquip(item:getName())
+	else	
+		self[itemData.Type]:set(0)
+		attachEquip("")
+	end
+	self:setSpeed()
+end
+
+return Player
