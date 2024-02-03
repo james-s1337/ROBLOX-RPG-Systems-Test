@@ -1,0 +1,152 @@
+local player = game:GetService("Players").LocalPlayer
+local weap = player:WaitForChild("Stats"):WaitForChild("Weapon")
+local SWINGS = 3
+local swingNum = 1
+local swingDebounce = true
+local swingCd = 0.8
+local dashing = false
+local dashDebounce = true
+local dashCd = 2
+local pAttacking = false
+local pAttackDebounce = true
+local pAttackCd = 2
+local weapData = nil
+local weapModel = nil
+local hitList = {}
+local animations = {}
+
+local CAS = game:GetService("ContextActionService")
+local Data = require(game.ReplicatedStorage.Modules.Data)
+local Event = game.ReplicatedStorage.Events.MainEvents
+
+function loadAnim()
+	workspace:WaitForChild(player.Name)
+	for i, v in pairs(game:GetService("ReplicatedStorage").Anims:GetChildren()) do
+		animations[v.Name] = player.Character.Humanoid:LoadAnimation(v)
+	end
+end
+loadAnim()
+
+function action(action, inputState)
+	if (inputState ~= Enum.UserInputState.Begin) or not player.Character or not weapData then
+		return
+	end
+	if (action == "swing") then
+		if swingDebounce and not dashing and not pAttacking then
+			swingDebounce = false
+			-- Play animation
+			Event:FireServer("swing")
+			print("swinging")
+			swingNum += 1
+			if swingNum > SWINGS then
+				swingNum = 1
+			end
+			wait(swingCd)
+			swingDebounce = true
+			hitList = {}
+		end
+	end
+	if (action == "dash") then
+		if swingDebounce and dashDebounce and not pAttacking then
+			dashDebounce = false
+			dashing = true
+			print("dashing---")
+			local origSpd = player.Character.Humanoid.WalkSpeed
+
+			player.Character.Humanoid.WalkSpeed = 0
+			local vel = Instance.new("LinearVelocity")
+			vel.VelocityConstraintMode = Enum.VelocityConstraintMode.Line
+			vel.MaxForce = 100000
+			vel.LineDirection = (player.Character.PrimaryPart.CFrame.LookVector).Unit
+			vel.LineVelocity = 50
+
+			local attach = Instance.new("Attachment")
+			
+			attach.Parent = player.Character.PrimaryPart
+			vel.Attachment0 = attach
+			vel.Parent = player.Character.PrimaryPart
+			-- Play animation
+			Event:FireServer("dash")
+			wait(0.3) -- Dash duration
+
+			dashing = false
+			vel:Destroy()
+			player.Character.Humanoid.WalkSpeed = origSpd
+			Event:FireServer("dash")
+			wait(dashCd)
+			dashDebounce = true
+		end
+	end
+	if (action == "pAttack") then
+		if not swingDebounce and not dashing and pAttackDebounce and weapModel then
+			pAttackDebounce = false
+			pAttacking = true
+			local skillBlade = weapModel.Parts.Blade:Clone()
+			local sHitList = {}
+			local weld = Instance.new("Weld")
+			weld.Part0 = weapModel.Parts.Blade
+			weld.Part1 = skillBlade
+			weld.Parent = skillBlade
+			skillBlade.Parent = weapModel
+			skillBlade.Touched:Connect(function(other)
+				if other.Parent.Parent ~= workspace.Mobs then
+					return
+				end
+				for i, v in pairs(sHitList) do
+					if other == v then
+						return
+					end
+				end
+				table.insert(sHitList, other)
+				Event:FireServer("damage", other, true)
+			end)
+			-- Play animation
+			Event:FireServer("pAttack")
+			wait() -- pAttack duration
+			pAttacking = false
+			skillBlade:Destroy()
+			Event:FireServer("pAttack")
+			wait(pAttackCd)
+			pAttackDebounce = true
+		end
+	end
+end
+
+CAS:BindAction("swing", action, false, Enum.UserInputType.MouseButton1)
+CAS:BindAction("dash", action, false, Enum.KeyCode.F)
+CAS:BindAction("pAttack", action, false, Enum.KeyCode.R)
+
+function getWeapData()
+	if not player.Character or not weap then
+		return
+	end
+	local function findItemName()
+	for i, v in pairs(player:WaitForChild("Items"):GetChildren()) do
+		if v.Value == weap.Value then
+			return v.Name
+		end
+	end
+	return nil
+	end
+	local itemData = Data.findItem(findItemName())
+	weapData = itemData
+	if weapData then
+		weapModel = player.Character:FindFirstChild("Weapon")
+		if not weapModel then
+			return
+		end
+		weapModel.Parts.Blade.Touched:Connect(function(other)
+			if other.Parent.Parent ~= workspace.Mobs or swingDebounce then
+				return
+			end
+			for i, v in pairs(hitList) do
+				if other == v then
+					return
+				end
+			end
+			table.insert(hitList, other)
+			Event:FireServer("damage", other)
+		end)
+	end
+end
+getWeapData()
